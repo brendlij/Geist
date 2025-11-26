@@ -1,18 +1,36 @@
 <script setup lang="ts">
-import GeistLogo from './components/app/GeistLogo.vue'
-import ThemeSwitcher from './components/app/ThemeSwitcher.vue'
+import AppHeader from './components/app/AppHeader.vue'
 </script>
 
 <template>
-  <header
-    class="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--surface)]"
-  >
-    <GeistLogo :size="48" color="var(--accent)" />
+  <div class="app-container">
+    <AppHeader />
 
-    <div class="font-semibold text-sm tracking-wide">Geist</div>
-
-    <ThemeSwitcher />
-  </header>
+    <main class="app-main">
+      <RouterView />
+    </main>
+  </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.app-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-xl);
+}
+
+@media (max-width: 640px) {
+  .app-main {
+    padding: var(--space-md);
+  }
+}
+</style>
