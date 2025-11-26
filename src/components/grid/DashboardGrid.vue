@@ -8,6 +8,8 @@ interface Props {
   maxRow?: number
   draggedCardColSpan?: number
   draggedCardRowSpan?: number
+  dragOffsetX?: number
+  dragOffsetY?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -17,22 +19,26 @@ const props = withDefaults(defineProps<Props>(), {
   maxRow: 1,
   draggedCardColSpan: 6,
   draggedCardRowSpan: 2,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
 })
 
 const emit = defineEmits<{
   gridDrop: [col: number, row: number]
 }>()
 
-const hoverCol = ref(0)
-const hoverRow = ref(0)
+const gridRef = ref<HTMLElement | null>(null)
+const hoverCol = ref(1)
+const hoverRow = ref(1)
 const isDraggingOver = ref(false)
 
 const gridStyle = computed(() => {
   const totalHeight = props.maxRow * props.rowHeight + (props.maxRow - 1) * props.gap
+
   return {
     display: 'grid',
     gridTemplateColumns: `repeat(${props.columns}, 1fr)`,
-    gridTemplateRows: `repeat(${props.maxRow}, ${props.rowHeight}px)`,
+    gridAutoRows: `${props.rowHeight}px`,
     gap: `${props.gap}px`,
     height: `${totalHeight}px`,
   } as Record<string, string | number>
@@ -41,41 +47,55 @@ const gridStyle = computed(() => {
 const ghostBoxStyle = computed(() => ({
   gridColumn: `${hoverCol.value} / span ${props.draggedCardColSpan}`,
   gridRow: `${hoverRow.value} / span ${props.draggedCardRowSpan}`,
-  pointerEvents: 'none',
+  pointerEvents: 'none' as const,
 }))
 
-function calculateGridPosition(clientX: number, clientY: number, rect: DOMRect) {
-  const x = clientX - rect.left
-  const y = clientY - rect.top
+function calculateGridPosition(e: DragEvent) {
+  const el = gridRef.value
+  if (!el) return { col: 1, row: 1 }
 
-  // Calculate grid column and row from mouse position
-  const colWidth = rect.width / props.columns
-  const col = Math.ceil((x + props.gap / 2) / (colWidth + props.gap))
-  const row = Math.ceil((y + props.gap / 2) / (props.rowHeight! + props.gap))
+  const rect = el.getBoundingClientRect()
 
-  return {
-    col: Math.max(1, Math.min(col, props.columns)),
-    row: Math.max(1, row),
-  }
-}
+  const x = e.clientX - rect.left + el.scrollLeft
+  const y = e.clientY - rect.top + el.scrollTop
 
-function handleGridDrop(e: DragEvent) {
-  e.preventDefault()
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const pos = calculateGridPosition(e.clientX, e.clientY, rect)
+  const xTopLeft = x - (props.dragOffsetX ?? 0)
+  const yTopLeft = y - (props.dragOffsetY ?? 0)
 
-  isDraggingOver.value = false
-  emit('gridDrop', pos.col, pos.row)
+  const totalGapWidth = (props.columns - 1) * props.gap
+  const colWidth = (rect.width - totalGapWidth) / props.columns
+  const stepX = colWidth + props.gap
+  const stepY = props.rowHeight + props.gap
+
+  let col = Math.floor(xTopLeft / stepX) + 1
+  let row = Math.floor(yTopLeft / stepY) + 1
+
+  col = Math.max(1, Math.min(col, props.columns))
+  row = Math.max(1, Math.min(row, props.maxRow))
+
+  return { col, row }
 }
 
 function handleGridDragOver(e: DragEvent) {
   e.preventDefault()
-  e.dataTransfer!.dropEffect = 'move'
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
 
+  const pos = calculateGridPosition(e)
   isDraggingOver.value = true
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const pos = calculateGridPosition(e.clientX, e.clientY, rect)
+  hoverCol.value = pos.col
+  hoverRow.value = pos.row
+}
 
+function handleGridDrop(e: DragEvent) {
+  e.preventDefault()
+  const pos = calculateGridPosition(e)
+  isDraggingOver.value = false
+  emit('gridDrop', pos.col, pos.row)
+}
+
+function handleGridDragEnter(e: DragEvent) {
+  const pos = calculateGridPosition(e)
+  isDraggingOver.value = true
   hoverCol.value = pos.col
   hoverRow.value = pos.row
 }
@@ -87,10 +107,12 @@ function handleGridDragLeave() {
 
 <template>
   <div
+    ref="gridRef"
     class="dashboard-grid"
     :style="gridStyle"
-    @drop="handleGridDrop"
     @dragover="handleGridDragOver"
+    @drop="handleGridDrop"
+    @dragenter="handleGridDragEnter"
     @dragleave="handleGridDragLeave"
   >
     <div v-if="isDraggingOver" class="ghost-box" :style="ghostBoxStyle" />
@@ -100,7 +122,7 @@ function handleGridDragLeave() {
 
 <style scoped>
 .dashboard-grid {
-  background-color: transparent;
+  width: 100%;
   padding: 0;
   border-radius: 0;
   border: none;

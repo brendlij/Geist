@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import DashboardGrid from '@/components/grid/DashboardGrid.vue'
 import CardWrapper from '@/components/grid/CardWrapper.vue'
 
@@ -21,72 +21,172 @@ const widgets = ref<GridWidget[]>([
   { id: 2, title: '⚡ Fast & Responsive', col: 7, row: 1, colSpan: 6, rowSpan: 2 },
   { id: 3, title: '📦 Pocketbase Ready', col: 1, row: 3, colSpan: 6, rowSpan: 2 },
   { id: 4, title: '🎯 Simple Structure', col: 7, row: 3, colSpan: 6, rowSpan: 2 },
-  { id: 5, title: ' Simple Structures', col: 7, row: 5, colSpan: 6, rowSpan: 2 },
+  { id: 5, title: '🧩 Simple Structures', col: 7, row: 5, colSpan: 6, rowSpan: 2 },
 ])
 
-const dragIndex = ref<number | null>(null)
+function rectsOverlap(a: GridWidget, b: GridWidget) {
+  const aRight = a.col + a.colSpan
+  const bRight = b.col + b.colSpan
+  const aBottom = a.row + a.rowSpan
+  const bBottom = b.row + b.rowSpan
 
-function onDragStart(index: number) {
-  dragIndex.value = index
-  console.log('Drag started on card:', index)
+  return !(aRight <= b.col || bRight <= a.col || aBottom <= b.row || bBottom <= a.row)
 }
 
-function onDrop(index: number) {
-  console.log('Drop on card:', index, 'from card:', dragIndex.value)
-  if (dragIndex.value === null || dragIndex.value === index) return
+// Karten nach oben “fallen lassen”
+function applyGravity(items: GridWidget[]) {
+  const sorted = [...items].sort((a, b) => a.row - b.row || a.col - b.col)
 
-  const updated = [...widgets.value]
-  const draggedCard = updated[dragIndex.value]
-  const targetCard = updated[index]
+  for (const w of sorted) {
+    let newRow = 1
 
-  if (!draggedCard || !targetCard) return
+    while (newRow < w.row) {
+      const test: GridWidget = { ...w, row: newRow }
+      const collision = sorted.some((o) => o.id !== w.id && rectsOverlap(test, o))
 
-  // Swap positions
-  const temp = {
-    col: draggedCard.col,
-    row: draggedCard.row,
-    colSpan: draggedCard.colSpan,
-    rowSpan: draggedCard.rowSpan,
+      if (collision) {
+        newRow++
+      } else {
+        w.row = newRow
+        break
+      }
+    }
   }
-  draggedCard.col = targetCard.col
-  draggedCard.row = targetCard.row
-  draggedCard.colSpan = targetCard.colSpan
-  draggedCard.rowSpan = targetCard.rowSpan
-
-  targetCard.col = temp.col
-  targetCard.row = temp.row
-  targetCard.colSpan = temp.colSpan
-  targetCard.rowSpan = temp.rowSpan
-
-  widgets.value = updated
-  dragIndex.value = null
-  console.log('Cards positions swapped')
 }
 
-function onDragOver(e: DragEvent) {
-  e.preventDefault()
-  e.dataTransfer!.dropEffect = 'move'
+// Andere Karten nach unten schieben, wenn eine größer wird
+function resolveResizeCollisions(items: GridWidget[], resized: GridWidget) {
+  let changed = true
+
+  while (changed) {
+    changed = false
+
+    for (const w of items) {
+      if (w.id === resized.id) continue
+      if (rectsOverlap(resized, w)) {
+        const newRow = resized.row + resized.rowSpan
+        if (w.row < newRow) {
+          w.row = newRow
+          changed = true
+        }
+      }
+    }
+  }
+}
+
+const dragIndex = ref<number | null>(null)
+const dragOffsetX = ref(0)
+const dragOffsetY = ref(0)
+
+function onDragStart(index: number, offsetX: number, offsetY: number) {
+  dragIndex.value = index
+  dragOffsetX.value = offsetX
+  dragOffsetY.value = offsetY
 }
 
 function onGridDrop(col: number, row: number) {
-  console.log('Dropped on grid position:', col, row, 'from card:', dragIndex.value)
   if (dragIndex.value === null) return
 
   const updated = [...widgets.value]
   const draggedCard = updated[dragIndex.value]
-
   if (!draggedCard) return
 
-  // Move card to new position
-  draggedCard.col = col
-  draggedCard.row = row
+  const targetRect: GridWidget = {
+    ...draggedCard,
+    col,
+    row,
+  }
+
+  const targetIndex = updated.findIndex(
+    (w, idx) => idx !== dragIndex.value && rectsOverlap(targetRect, w),
+  )
+
+  if (targetIndex !== -1) {
+    const other = updated[targetIndex]
+    if (!other) return
+
+    const tmpCol = other.col
+    const tmpRow = other.row
+
+    other.col = draggedCard.col
+    other.row = draggedCard.row
+
+    draggedCard.col = tmpCol
+    draggedCard.row = tmpRow
+  } else {
+    draggedCard.col = col
+    draggedCard.row = row
+  }
+
+  applyGravity(updated)
 
   widgets.value = updated
   dragIndex.value = null
-  console.log('Card moved to grid position')
 }
 
-// Calculate the maximum row needed
+// ---------- Resize-Logik ----------
+
+const resizingIndex = ref<number | null>(null)
+const resizeStartY = ref(0)
+const resizeStartRowSpan = ref(0)
+
+function onResizeStart(index: number, _clientX: number, clientY: number) {
+  resizingIndex.value = index
+  resizeStartY.value = clientY
+
+  const w = widgets.value[index]
+  if (!w) return // verhindert TS-Error UND schützt Runtime
+
+  resizeStartRowSpan.value = w.rowSpan
+
+  window.addEventListener('mousemove', onResizeMove)
+  window.addEventListener('mouseup', onResizeEnd)
+}
+
+function onResizeMove(e: MouseEvent) {
+  if (resizingIndex.value === null) return
+
+  const idx = resizingIndex.value
+  const updated = [...widgets.value]
+  const widget = updated[idx]
+  if (!widget) return
+
+  const deltaY = e.clientY - resizeStartY.value
+  const stepY = rowHeight.value + gridGap.value
+
+  let newRowSpan = resizeStartRowSpan.value + Math.round(deltaY / stepY)
+
+  if (newRowSpan < 1) newRowSpan = 1
+
+  widget.rowSpan = newRowSpan
+
+  resolveResizeCollisions(updated, widget)
+
+  widgets.value = updated
+}
+
+function onResizeEnd() {
+  if (resizingIndex.value !== null) {
+    const updated = [...widgets.value]
+    const widget = updated[resizingIndex.value]
+    if (widget) {
+      resolveResizeCollisions(updated, widget)
+      applyGravity(updated)
+      widgets.value = updated
+    }
+  }
+
+  resizingIndex.value = null
+  window.removeEventListener('mousemove', onResizeMove)
+  window.removeEventListener('mouseup', onResizeEnd)
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onResizeMove)
+  window.removeEventListener('mouseup', onResizeEnd)
+})
+
+// MaxRow für Grid-Höhe
 const maxRow = computed(() => {
   return Math.max(...widgets.value.map((w) => w.row + w.rowSpan - 1), 1)
 })
@@ -120,9 +220,11 @@ const maxRow = computed(() => {
       :gap="gridGap"
       :row-height="rowHeight"
       :max-row="maxRow"
-      :dragged-card-col-span="dragIndex !== null ? widgets[dragIndex]?.colSpan || 6 : 6"
-      :dragged-card-row-span="dragIndex !== null ? widgets[dragIndex]?.rowSpan || 2 : 2"
-      @grid-drop="(col, row) => onGridDrop(col, row)"
+      :dragged-card-col-span="dragIndex !== null ? widgets[dragIndex!]?.colSpan || 6 : 6"
+      :dragged-card-row-span="dragIndex !== null ? widgets[dragIndex!]?.rowSpan || 2 : 2"
+      :drag-offset-x="dragOffsetX"
+      :drag-offset-y="dragOffsetY"
+      @grid-drop="onGridDrop"
     >
       <CardWrapper
         v-for="(widget, index) in widgets"
@@ -134,9 +236,8 @@ const maxRow = computed(() => {
         :row-span="widget.rowSpan"
         :is-dragging="dragIndex === index"
         :index="index"
-        @drag-start="(idx) => onDragStart(idx)"
-        @drag-over="onDragOver"
-        @drop="(idx) => onDrop(idx)"
+        @drag-start="onDragStart"
+        @resize-start="onResizeStart"
       >
         {{ widget.title }}
       </CardWrapper>
