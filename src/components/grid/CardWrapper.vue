@@ -103,7 +103,7 @@ function handleResizeMouseDown(e: MouseEvent) {
   border-radius: 4px;
   border: 1px solid var(--border-strong, var(--border));
   background: linear-gradient(135deg, var(--accent-soft), var(--surface));
-  cursor: ns-resize;
+  cursor: nwse-resize;
   box-shadow: var(--shadow-xs);
 }
 </style>

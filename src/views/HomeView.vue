@@ -150,14 +150,19 @@ const resizingIndex = ref<number | null>(null)
 const resizeStartY = ref(0)
 const resizeStartRowSpan = ref(0)
 
-function onResizeStart(index: number, _clientX: number, clientY: number) {
+const resizeStartX = ref(0)
+const resizeStartColSpan = ref(0)
+
+function onResizeStart(index: number, clientX: number, clientY: number) {
   resizingIndex.value = index
+  resizeStartX.value = clientX
   resizeStartY.value = clientY
 
   const w = widgets.value[index]
-  if (!w) return // verhindert TS-Error UND schützt Runtime
+  if (!w) return
 
   resizeStartRowSpan.value = w.rowSpan
+  resizeStartColSpan.value = w.colSpan
 
   window.addEventListener('mousemove', onResizeMove)
   window.addEventListener('mouseup', onResizeEnd)
@@ -171,18 +176,38 @@ function onResizeMove(e: MouseEvent) {
   const widget = updated[idx]
   if (!widget) return
 
+  // ========= vertikal (rowSpan) =========
   const deltaY = e.clientY - resizeStartY.value
   const stepY = rowHeight.value + gridGap.value
 
   let newRowSpan = resizeStartRowSpan.value + Math.round(deltaY / stepY)
-
   if (newRowSpan < 1) newRowSpan = 1
 
   widget.rowSpan = newRowSpan
 
-  // global alle Overlaps fixen
-  resolveAllCollisions(updated)
+  // ========= horizontal (colSpan) =========
+  const gridEl = document.querySelector('.dashboard-grid') as HTMLElement | null
+  if (gridEl) {
+    const rect = gridEl.getBoundingClientRect()
 
+    const totalGapWidth = (gridColumns.value - 1) * gridGap.value
+    const colWidth = (rect.width - totalGapWidth) / gridColumns.value
+    const stepX = colWidth + gridGap.value
+
+    const deltaX = e.clientX - resizeStartX.value
+    let newColSpan = resizeStartColSpan.value + Math.round(deltaX / stepX)
+
+    if (newColSpan < 1) newColSpan = 1
+
+    // nicht rechts aus dem Grid rauswachsen
+    const maxSpan = gridColumns.value - widget.col + 1
+    if (newColSpan > maxSpan) newColSpan = maxSpan
+
+    widget.colSpan = newColSpan
+  }
+
+  // Kollisionen global fixen
+  resolveAllCollisions(updated)
   widgets.value = updated
 }
 
