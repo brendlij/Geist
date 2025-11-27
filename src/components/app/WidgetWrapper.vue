@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, ref, type Ref } from 'vue'
+import { inject, ref, type Ref, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 
 defineOptions({
@@ -12,11 +12,13 @@ interface Props {
   slotId?: string
   configurable?: boolean
   removable?: boolean
+  compact?: boolean // For header widgets - split drag/menu areas
 }
 
 const props = withDefaults(defineProps<Props>(), {
   configurable: false,
   removable: false,
+  compact: false,
 })
 
 const emit = defineEmits<{
@@ -46,33 +48,87 @@ function handleDelete() {
     emit('delete', props.slotId)
   }
 }
+
+// Close menu when clicking outside
+const menuAreaRef = ref<HTMLElement | null>(null)
+
+function handleClickOutside(event: MouseEvent) {
+  if (showMenu.value && menuAreaRef.value && !menuAreaRef.value.contains(event.target as Node)) {
+    closeMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <template>
   <div
     class="widget-wrapper"
-    :class="{ 'edit-mode': editMode }"
-    :data-swapy-handle="editMode ? '' : undefined"
-    @click="closeMenu"
+    :class="{ 'edit-mode': editMode, 'compact-mode': compact }"
+    :data-swapy-handle="editMode && !compact ? '' : undefined"
   >
-    <!-- Menu Button - only visible in edit mode -->
-    <div v-if="editMode && (configurable || removable)" class="menu-container" data-swapy-no-drag>
-      <button class="menu-button" @click.stop="toggleMenu" title="Widget Options">
-        <Icon icon="mdi:dots-vertical" class="menu-icon" />
-      </button>
-
-      <!-- Context Menu -->
-      <div v-if="showMenu" class="context-menu">
-        <button v-if="configurable" class="menu-item" @click.stop="openSettings">
-          <Icon icon="mdi:cog" class="item-icon" />
-          <span>Edit Widget</span>
-        </button>
-        <button v-if="removable && slotId" class="menu-item delete" @click.stop="handleDelete">
-          <Icon icon="mdi:delete" class="item-icon" />
-          <span>Delete Widget</span>
-        </button>
+    <!-- Compact mode: split layout for header widgets -->
+    <template v-if="compact && editMode">
+      <!-- Left half: drag area -->
+      <div class="compact-drag-area" data-swapy-handle>
+        <Icon icon="mdi:drag" class="drag-icon" />
       </div>
-    </div>
+      <!-- Right half: menu area -->
+      <div
+        v-if="configurable || removable"
+        ref="menuAreaRef"
+        class="compact-menu-area"
+        data-swapy-no-drag
+      >
+        <button
+          type="button"
+          class="compact-menu-button"
+          @mousedown.stop.prevent
+          @click.stop.prevent="toggleMenu"
+        >
+          <Icon icon="mdi:dots-vertical" class="menu-icon" />
+        </button>
+        <!-- Context Menu -->
+        <div v-if="showMenu" class="context-menu compact-context-menu" @click.stop>
+          <button v-if="configurable" class="menu-item" @click.stop="openSettings">
+            <Icon icon="mdi:cog" class="item-icon" />
+            <span>Edit</span>
+          </button>
+          <button v-if="removable && slotId" class="menu-item delete" @click.stop="handleDelete">
+            <Icon icon="mdi:delete" class="item-icon" />
+            <span>Delete</span>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <!-- Standard mode: menu button in corner -->
+    <template v-else>
+      <!-- Menu Button - only visible in edit mode -->
+      <div v-if="editMode && (configurable || removable)" class="menu-container" data-swapy-no-drag>
+        <button class="menu-button" @click.stop="toggleMenu" title="Widget Options">
+          <Icon icon="mdi:dots-vertical" class="menu-icon" />
+        </button>
+
+        <!-- Context Menu -->
+        <div v-if="showMenu" class="context-menu">
+          <button v-if="configurable" class="menu-item" @click.stop="openSettings">
+            <Icon icon="mdi:cog" class="item-icon" />
+            <span>Edit Widget</span>
+          </button>
+          <button v-if="removable && slotId" class="menu-item delete" @click.stop="handleDelete">
+            <Icon icon="mdi:delete" class="item-icon" />
+            <span>Delete Widget</span>
+          </button>
+        </div>
+      </div>
+    </template>
 
     <!-- Widget Content -->
     <div class="widget-content" :class="{ disabled: editMode }" data-swapy-no-drag>
@@ -212,5 +268,97 @@ function handleDelete() {
 .widget-content :deep(textarea),
 .widget-content :deep(select) {
   pointer-events: auto;
+}
+
+/* Compact mode for header widgets */
+.widget-wrapper.compact-mode.edit-mode {
+  cursor: default;
+}
+
+.compact-drag-area {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  border-radius: var(--widget-border-radius, 0.75rem) 0 0 var(--widget-border-radius, 0.75rem);
+  background: transparent;
+  transition: background-color 0.2s;
+  z-index: 10;
+}
+
+.compact-drag-area:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.compact-drag-area:active {
+  cursor: grabbing;
+}
+
+.compact-drag-area .drag-icon {
+  font-size: 1.25rem;
+  color: var(--text);
+  opacity: 0.5;
+}
+
+.compact-drag-area:hover .drag-icon {
+  opacity: 0.8;
+}
+
+.compact-menu-area {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 0 var(--widget-border-radius, 0.75rem) var(--widget-border-radius, 0.75rem) 0;
+  background: transparent;
+  transition: background-color 0.2s;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.compact-menu-area:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.compact-menu-button {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  pointer-events: auto;
+}
+
+.compact-menu-area .menu-icon {
+  font-size: 1.25rem;
+  color: var(--text);
+  opacity: 0.5;
+}
+
+.compact-menu-area:hover .menu-icon {
+  opacity: 0.8;
+}
+
+.compact-context-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: auto;
+  min-width: 120px;
+  z-index: 100;
 }
 </style>

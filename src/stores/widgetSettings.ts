@@ -8,8 +8,22 @@ export interface ServiceSettings {
   description: string
 }
 
+export interface HeaderClockSettings {
+  showSeconds: boolean
+  showDate: boolean
+  use24Hour: boolean
+}
+
+export interface HeaderWeatherSettings {
+  city: string
+  units: 'metric' | 'imperial'
+  apiKey: string
+}
+
 export type WidgetSettings = {
   service?: ServiceSettings
+  headerClock?: HeaderClockSettings
+  headerWeather?: HeaderWeatherSettings
   // Add more widget types here as needed
 }
 
@@ -46,20 +60,28 @@ export const useWidgetSettingsStore = defineStore('widgetSettings', () => {
       settings.value[slotId] = {}
     }
     settings.value[slotId][widgetType] = value
+    // Force save immediately
+    saveToStorage()
   }
 
   function clearSettings(slotId: string) {
     delete settings.value[slotId]
+    saveToStorage()
   }
 
+  function saveToStorage() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings.value))
+    } catch (error) {
+      console.error('Failed to persist widget settings', error)
+    }
+  }
+
+  // Also keep the watch for any other mutations
   watch(
     settings,
-    (value) => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } catch (error) {
-        console.error('Failed to persist widget settings', error)
-      }
+    () => {
+      saveToStorage()
     },
     { deep: true },
   )

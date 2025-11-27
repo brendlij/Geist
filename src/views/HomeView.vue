@@ -1,23 +1,21 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { provide, ref, computed } from 'vue'
+import { inject, ref, computed, type Ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import SwapyGrid from '@/components/app/SwapyGrid.vue'
 import QuickNotesWidget from '@/components/widgets/QuickNotesWidget.vue'
 import Todolist from '@/components/widgets/Todolist.vue'
-import Clock from '@/components/widgets/Clock.vue'
 import ServiceWidget from '@/components/widgets/Service.vue'
 import { useLayoutStore } from '@/stores/layout'
 import { useServicesLayoutStore } from '@/stores/servicesLayout'
 
-const editMode = ref(false)
-provide('editMode', editMode)
+const editMode = inject<Ref<boolean>>('editMode', ref(false))
 
 function toggleEditMode() {
   editMode.value = !editMode.value
 }
 
-type WidgetId = 'quick-notes' | 'todo' | 'clock' | 'service'
+type WidgetId = 'quick-notes' | 'todo' | 'service'
 type WidgetConfig = {
   id: WidgetId
   title: string
@@ -29,7 +27,6 @@ type WidgetConfig = {
 const widgetRegistry: Record<WidgetId, WidgetConfig> = {
   'quick-notes': { id: 'quick-notes', title: 'Quick Notes', component: QuickNotesWidget },
   todo: { id: 'todo', title: 'To-Do List', component: Todolist },
-  clock: { id: 'clock', title: 'Clock', component: Clock },
   service: { id: 'service', title: 'Service', component: ServiceWidget, configurable: true },
 }
 
@@ -147,6 +144,7 @@ const servicesGridKey = ref(0)
   padding: 0.75rem 1rem;
   margin: 0;
   color: var(--text);
+  opacity: 0.9;
   background-color: var(--accent-soft);
   border: 1px solid var(--border);
   border-radius: 1.5rem;

@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { provide, ref } from 'vue'
 import AppHeader from './components/app/AppHeader.vue'
+
+const editMode = ref(false)
+provide('editMode', editMode)
 </script>
 
 <template>

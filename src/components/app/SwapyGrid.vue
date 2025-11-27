@@ -31,6 +31,7 @@ const props = defineProps<{
   slots: SlotConfig[]
   widgetRegistry: Record<WidgetId, WidgetConfig>
   layout: LayoutItem[] // initiales Layout für dieses Grid
+  compact?: boolean // For header widgets - use compact edit mode
 }>()
 
 const emit = defineEmits<{
@@ -126,6 +127,7 @@ watch(
           :removable="getSlotContent(slot.id).widget!.removable"
           :widget-id="getSlotContent(slot.id).itemId ?? undefined"
           :slot-id="slot.id"
+          :compact="compact"
           @open-settings="() => openWidgetSettings(slot.id)"
           @delete="(slotId: string) => emit('delete-widget', slotId)"
         >
