@@ -13,6 +13,7 @@ type WidgetConfig = {
   title: string
   component?: Component
   fallback?: string
+  configurable?: boolean
 }
 
 type LayoutItem = {
@@ -47,6 +48,24 @@ function getSlotContent(slotId: string) {
   const itemId = initialAssignments.get(slotId) ?? null
   const widget = itemId ? props.widgetRegistry[itemId] : undefined
   return { slotId, itemId, widget }
+}
+
+// Store widget component refs for calling methods like openSettings
+const widgetRefs = new Map<string, { openSettings?: () => void }>()
+
+function setWidgetRef(slotId: string, el: { openSettings?: () => void } | null) {
+  if (el) {
+    widgetRefs.set(slotId, el)
+  } else {
+    widgetRefs.delete(slotId)
+  }
+}
+
+function openWidgetSettings(slotId: string) {
+  const widgetRef = widgetRefs.get(slotId)
+  if (widgetRef?.openSettings) {
+    widgetRef.openSettings()
+  }
 }
 
 onMounted(() => {
@@ -101,8 +120,16 @@ watch(
         <WidgetWrapper
           v-if="getSlotContent(slot.id).widget?.component"
           :title="getSlotContent(slot.id).widget!.title"
+          :configurable="getSlotContent(slot.id).widget!.configurable"
+          :widget-id="getSlotContent(slot.id).itemId ?? undefined"
+          :slot-id="slot.id"
+          @open-settings="() => openWidgetSettings(slot.id)"
         >
-          <component :is="getSlotContent(slot.id).widget!.component" />
+          <component
+            :is="getSlotContent(slot.id).widget!.component"
+            :slot-id="slot.id"
+            :ref="(el: any) => setWidgetRef(slot.id, el)"
+          />
         </WidgetWrapper>
       </div>
     </div>

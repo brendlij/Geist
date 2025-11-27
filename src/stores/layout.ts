@@ -7,17 +7,17 @@ const defaultLayout: SlotItemMapArray = [
   { slot: 'a', item: 'quick-notes' },
   { slot: 'b', item: 'todo' },
   { slot: 'c', item: 'clock' },
-  { slot: 'd', item: null },
+  { slot: 'd', item: 'service' },
   { slot: 'e', item: null },
   { slot: 'f', item: null },
 ]
 
-const VALID_WIDGET_IDS = new Set(['quick-notes', 'todo', 'clock'])
+const VALID_WIDGET_IDS = new Set(['quick-notes', 'todo', 'clock', 'service'])
 const ALL_SLOTS = ['a', 'b', 'c', 'd', 'e', 'f']
 
 const STORAGE_KEY = 'geist:widget-layout'
 const STORAGE_VERSION_KEY = 'geist:widget-layout-version'
-const CURRENT_VERSION = 2 // Increment this when layout structure changes
+const CURRENT_VERSION = 3 // Increment this when layout structure changes
 
 function loadLayout(): SlotItemMapArray {
   try {

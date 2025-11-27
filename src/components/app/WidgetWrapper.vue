@@ -7,11 +7,24 @@ defineOptions({
 
 interface Props {
   title?: string
+  widgetId?: string
+  slotId?: string
+  configurable?: boolean
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  configurable: false,
+})
+
+const emit = defineEmits<{
+  (e: 'open-settings'): void
+}>()
 
 const editMode = inject<Ref<boolean>>('editMode')
+
+function openSettings() {
+  emit('open-settings')
+}
 </script>
 
 <template>
@@ -24,10 +37,24 @@ const editMode = inject<Ref<boolean>>('editMode')
       :title="`Drag to move${title ? ': ' + title : ''}`"
     />
 
+    <!-- Settings Button - only visible in edit mode for configurable widgets -->
+    <button
+      v-if="editMode && configurable"
+      class="settings-button"
+      data-swapy-no-drag
+      @click.stop="openSettings"
+      title="Widget Settings"
+    >
+      ⚙️
+    </button>
+
     <!-- Widget Content -->
     <div class="widget-content" data-swapy-no-drag>
       <slot />
     </div>
+
+    <!-- Settings Modal Slot -->
+    <slot name="settings" />
   </div>
 </template>
 
@@ -66,6 +93,30 @@ const editMode = inject<Ref<boolean>>('editMode')
 .widget-handle:active {
   cursor: grabbing;
   background-color: var(--accent);
+}
+
+/* Settings button */
+.settings-button {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 0.75rem;
+  background-color: var(--accent);
+  cursor: pointer;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: all 0.2s;
+}
+
+.settings-button:hover {
+  background-color: var(--primary);
+  transform: scale(1.1);
 }
 
 /* Content sits normally */
