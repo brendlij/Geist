@@ -21,7 +21,7 @@ const showSettings = ref(false)
 const defaults: ServiceSettings = {
   name: 'My Service',
   url: 'http://localhost',
-  icon: '🔗',
+  icon: 'mdi:link',
   description: 'Click to open',
 }
 
@@ -53,10 +53,16 @@ function closeSettings() {
   showSettings.value = false
 }
 
-// Check if icon is a URL (image) or emoji/text
+// Check if icon is a URL (image)
 const isImageIcon = computed(() => {
   const icon = settings.value.icon
   return icon.startsWith('http') || icon.startsWith('/') || icon.startsWith('data:')
+})
+
+// Check if icon is an Iconify icon (contains : like mdi:home, hugeicons:link)
+const isIconifyIcon = computed(() => {
+  const icon = settings.value.icon
+  return icon.includes(':') && !isImageIcon.value
 })
 
 // Status indicator for ping checks
@@ -146,7 +152,13 @@ defineExpose({ openSettings })
     <div class="service" @click="openService">
       <div class="service-icon-wrapper">
         <div class="service-icon">
-          <img v-if="isImageIcon" :src="settings.icon" :alt="settings.name" class="icon-image" />
+          <Icon v-if="isIconifyIcon" :icon="settings.icon" width="28" height="28" />
+          <img
+            v-else-if="isImageIcon"
+            :src="settings.icon"
+            :alt="settings.name"
+            class="icon-image"
+          />
           <span v-else class="emoji-icon">{{ settings.icon }}</span>
         </div>
         <span
@@ -183,13 +195,14 @@ defineExpose({ openSettings })
               <input id="service-url" v-model="formData.url" type="url" placeholder="http://..." />
             </div>
             <div class="form-group">
-              <label for="service-icon">Icon (emoji or image URL)</label>
+              <label for="service-icon">Icon</label>
               <input
                 id="service-icon"
                 v-model="formData.icon"
                 type="text"
-                placeholder="🔗 or https://..."
+                placeholder="mdi:home, hugeicons:link, 🔗, or URL"
               />
+              <small class="form-hint">Iconify (mdi:icon), emoji, or image URL</small>
             </div>
             <div class="form-group">
               <label for="service-description">Description</label>
@@ -397,6 +410,13 @@ defineExpose({ openSettings })
 }
 
 .form-group input::placeholder {
+  color: var(--text-muted);
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
