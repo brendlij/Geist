@@ -1,45 +1,19 @@
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { defineStore } from 'pinia'
 
 type SlotItemMapArray = Array<{ slot: string; item: string | null }>
 
-// 12 slots for services grid (smaller widgets)
-const ALL_SLOTS = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10', 's11', 's12']
+// Maximum slots for services grid
+const MAX_SLOTS = 24
 
-// Each slot can have a service widget instance
-const VALID_WIDGET_IDS = new Set([
-  'service-1',
-  'service-2',
-  'service-3',
-  'service-4',
-  'service-5',
-  'service-6',
-  'service-7',
-  'service-8',
-  'service-9',
-  'service-10',
-  'service-11',
-  'service-12',
-])
-
-const defaultLayout: SlotItemMapArray = [
-  { slot: 's1', item: 'service-1' },
-  { slot: 's2', item: 'service-2' },
-  { slot: 's3', item: 'service-3' },
-  { slot: 's4', item: 'service-4' },
-  { slot: 's5', item: 'service-5' },
-  { slot: 's6', item: 'service-6' },
-  { slot: 's7', item: 'service-7' },
-  { slot: 's8', item: 'service-8' },
-  { slot: 's9', item: null },
-  { slot: 's10', item: null },
-  { slot: 's11', item: null },
-  { slot: 's12', item: null },
-]
+// Generate slot IDs dynamically
+function generateSlots(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `s${i + 1}`)
+}
 
 const STORAGE_KEY = 'geist:services-layout'
 const STORAGE_VERSION_KEY = 'geist:services-layout-version'
-const CURRENT_VERSION = 1
+const CURRENT_VERSION = 2 // Bumped version for new dynamic system
 
 function loadLayout(): SlotItemMapArray {
   try {
@@ -47,55 +21,115 @@ function loadLayout(): SlotItemMapArray {
     if (version !== String(CURRENT_VERSION)) {
       localStorage.removeItem(STORAGE_KEY)
       localStorage.setItem(STORAGE_VERSION_KEY, String(CURRENT_VERSION))
-      return [...defaultLayout]
+      // Return default with 8 services
+      return generateSlots(12).map((slot, i) => ({
+        slot,
+        item: i < 8 ? `service-${i + 1}` : null,
+      }))
     }
 
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return [...defaultLayout]
+    if (!raw) {
+      return generateSlots(12).map((slot, i) => ({
+        slot,
+        item: i < 8 ? `service-${i + 1}` : null,
+      }))
+    }
+
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return [...defaultLayout]
+    if (!Array.isArray(parsed)) {
+      return generateSlots(12).map((slot, i) => ({
+        slot,
+        item: i < 8 ? `service-${i + 1}` : null,
+      }))
+    }
 
-    const valid = parsed.every(
-      (entry) =>
-        entry &&
-        typeof entry.slot === 'string' &&
-        (entry.item === null || typeof entry.item === 'string'),
-    )
-    if (!valid) return [...defaultLayout]
-
-    const parsedMap = new Map<string, string | null>()
-    const usedWidgets = new Set<string>()
-
-    parsed.forEach((entry) => {
-      if (ALL_SLOTS.includes(entry.slot)) {
-        if (entry.item === null) {
-          parsedMap.set(entry.slot, null)
-        } else if (VALID_WIDGET_IDS.has(entry.item) && !usedWidgets.has(entry.item)) {
-          parsedMap.set(entry.slot, entry.item)
-          usedWidgets.add(entry.item)
-        }
-      }
-    })
-
-    return ALL_SLOTS.map((slot) => ({
-      slot,
-      item: parsedMap.has(slot) ? parsedMap.get(slot)! : null,
-    }))
+    return parsed as SlotItemMapArray
   } catch (error) {
     console.error('Failed to load services layout from storage', error)
-    return [...defaultLayout]
+    return generateSlots(12).map((slot, i) => ({
+      slot,
+      item: i < 8 ? `service-${i + 1}` : null,
+    }))
   }
 }
 
 export const useServicesLayoutStore = defineStore('servicesLayout', () => {
   const layout = ref<SlotItemMapArray>(loadLayout())
 
+  // Computed slots based on current layout
+  const slots = computed(() => layout.value.map((l) => ({ id: l.slot })))
+
+  // Get the next available service ID
+  function getNextServiceId(): string {
+    const usedIds = new Set(layout.value.map((l) => l.item).filter(Boolean))
+    let i = 1
+    while (usedIds.has(`service-${i}`)) {
+      i++
+    }
+    return `service-${i}`
+  }
+
+  // Get the next available slot ID
+  function getNextSlotId(): string {
+    const usedSlots = new Set(layout.value.map((l) => l.slot))
+    let i = 1
+    while (usedSlots.has(`s${i}`)) {
+      i++
+    }
+    return `s${i}`
+  }
+
   function setLayout(newLayout: SlotItemMapArray) {
     layout.value = [...newLayout]
   }
 
+  // Add a new service to the first empty slot, or create a new slot
+  function addService(): string | null {
+    // First, try to find an empty slot
+    const emptySlotIndex = layout.value.findIndex((l) => l.item === null)
+    const emptySlot = layout.value[emptySlotIndex]
+
+    if (emptySlotIndex !== -1 && emptySlot) {
+      const serviceId = getNextServiceId()
+      emptySlot.item = serviceId
+      return serviceId
+    }
+
+    // If no empty slots and we haven't reached max, add a new slot
+    if (layout.value.length < MAX_SLOTS) {
+      const slotId = getNextSlotId()
+      const serviceId = getNextServiceId()
+      layout.value.push({ slot: slotId, item: serviceId })
+      return serviceId
+    }
+
+    return null // Max slots reached
+  }
+
+  // Remove a service from a slot (just clears the slot, doesn't remove it)
+  function removeService(slotId: string) {
+    const slot = layout.value.find((l) => l.slot === slotId)
+    if (slot) {
+      slot.item = null
+    }
+  }
+
+  // Remove empty slots from the end (cleanup)
+  function cleanupEmptySlots() {
+    // Remove trailing empty slots, but keep at least the slots with items
+    let lastSlot = layout.value[layout.value.length - 1]
+    while (layout.value.length > 4 && lastSlot && lastSlot.item === null) {
+      layout.value.pop()
+      lastSlot = layout.value[layout.value.length - 1]
+    }
+  }
+
   function resetLayout() {
-    layout.value = [...defaultLayout]
+    layout.value = generateSlots(12).map((slot, i) => ({
+      slot,
+      item: i < 8 ? `service-${i + 1}` : null,
+    }))
   }
 
   watch(
@@ -112,7 +146,11 @@ export const useServicesLayoutStore = defineStore('servicesLayout', () => {
 
   return {
     layout,
+    slots,
     setLayout,
+    addService,
+    removeService,
+    cleanupEmptySlots,
     resetLayout,
   }
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { provide, ref } from 'vue'
+import { provide, ref, computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import SwapyGrid from '@/components/app/SwapyGrid.vue'
 import QuickNotesWidget from '@/components/widgets/QuickNotesWidget.vue'
@@ -33,123 +33,64 @@ const widgetRegistry: Record<WidgetId, WidgetConfig> = {
   service: { id: 'service', title: 'Service', component: ServiceWidget, configurable: true },
 }
 
-// Services widget registry - all services use the same ServiceWidget component
-type ServiceWidgetId =
-  | 'service-1'
-  | 'service-2'
-  | 'service-3'
-  | 'service-4'
-  | 'service-5'
-  | 'service-6'
-  | 'service-7'
-  | 'service-8'
-  | 'service-9'
-  | 'service-10'
-  | 'service-11'
-  | 'service-12'
-type ServiceWidgetConfig = {
-  id: ServiceWidgetId
-  title: string
-  component: Component
-  configurable: boolean
-}
-
-const servicesWidgetRegistry: Record<ServiceWidgetId, ServiceWidgetConfig> = {
-  'service-1': {
-    id: 'service-1',
-    title: 'Service 1',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-2': {
-    id: 'service-2',
-    title: 'Service 2',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-3': {
-    id: 'service-3',
-    title: 'Service 3',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-4': {
-    id: 'service-4',
-    title: 'Service 4',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-5': {
-    id: 'service-5',
-    title: 'Service 5',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-6': {
-    id: 'service-6',
-    title: 'Service 6',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-7': {
-    id: 'service-7',
-    title: 'Service 7',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-8': {
-    id: 'service-8',
-    title: 'Service 8',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-9': {
-    id: 'service-9',
-    title: 'Service 9',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-10': {
-    id: 'service-10',
-    title: 'Service 10',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-11': {
-    id: 'service-11',
-    title: 'Service 11',
-    component: ServiceWidget,
-    configurable: true,
-  },
-  'service-12': {
-    id: 'service-12',
-    title: 'Service 12',
-    component: ServiceWidget,
-    configurable: true,
-  },
-}
-
 const layoutStore = useLayoutStore()
 const servicesLayoutStore = useServicesLayoutStore()
 
 // Main widgets grid - 6 slots
 const slots = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'e' }, { id: 'f' }]
 
-// Services grid - 12 smaller slots
-const servicesSlots = [
-  { id: 's1' },
-  { id: 's2' },
-  { id: 's3' },
-  { id: 's4' },
-  { id: 's5' },
-  { id: 's6' },
-  { id: 's7' },
-  { id: 's8' },
-  { id: 's9' },
-  { id: 's10' },
-  { id: 's11' },
-  { id: 's12' },
-]
+// Dynamic services widget registry - generates entries based on layout
+type ServiceWidgetConfig = {
+  id: string
+  title: string
+  component: Component
+  configurable: boolean
+  removable: boolean
+}
+
+// Create a registry entry for any service ID
+function getServiceWidgetConfig(serviceId: string): ServiceWidgetConfig {
+  return {
+    id: serviceId,
+    title: serviceId.replace('service-', 'Service '),
+    component: ServiceWidget,
+    configurable: true,
+    removable: true,
+  }
+}
+
+// Build dynamic registry from current layout
+const servicesWidgetRegistry = computed(() => {
+  const registry: Record<string, ServiceWidgetConfig> = {}
+  servicesLayoutStore.layout.forEach((item) => {
+    if (item.item) {
+      registry[item.item] = getServiceWidgetConfig(item.item)
+    }
+  })
+  // Also add some extra IDs for newly added services
+  for (let i = 1; i <= 24; i++) {
+    const id = `service-${i}`
+    if (!registry[id]) {
+      registry[id] = getServiceWidgetConfig(id)
+    }
+  }
+  return registry
+})
+
+// Handle service deletion
+function handleDeleteService(slotId: string) {
+  servicesLayoutStore.removeService(slotId)
+  servicesGridKey.value++
+}
+
+// Handle adding a new service
+function handleAddService() {
+  servicesLayoutStore.addService()
+  servicesGridKey.value++
+}
+
+// Key to force re-render of services grid when adding/removing
+const servicesGridKey = ref(0)
 </script>
 
 <template>
@@ -163,13 +104,21 @@ const servicesSlots = [
 
   <!-- Services Grid -->
   <div class="services-section">
-    <h2 class="section-title">Services</h2>
+    <div class="services-header">
+      <h2 class="section-title">Services</h2>
+      <button v-if="editMode" class="add-service-button" @click="handleAddService">
+        <Icon icon="mdi:plus" width="20" height="20" />
+        Add Service
+      </button>
+    </div>
     <SwapyGrid
-      :slots="servicesSlots"
+      :key="servicesGridKey"
+      :slots="servicesLayoutStore.slots"
       :widget-registry="servicesWidgetRegistry"
       :layout="servicesLayoutStore.layout"
       class="services-grid"
       @update:layout="servicesLayoutStore.setLayout"
+      @delete-widget="handleDeleteService"
     />
   </div>
 
@@ -180,17 +129,47 @@ const servicesSlots = [
 </template>
 
 <style scoped>
+.services-section {
+  margin-top: 1rem;
+}
+
+.services-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  margin-bottom: 0.5rem;
+}
+
 .section-title {
   font-size: 1.25rem;
   font-weight: 600;
-  margin-bottom: 0.5rem;
-  margin-top: 2rem;
-  padding: 1em;
+  padding: 0.75rem 1rem;
+  margin: 0;
   color: var(--text);
   background-color: var(--accent-soft);
   border: 1px solid var(--border);
-  border-radius: 2em;
-  margin-left: 16px;
+  border-radius: 1.5rem;
+}
+
+.add-service-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: var(--primary);
+  color: var(--text);
+  border: none;
+  border-radius: 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.add-service-button:hover {
+  background-color: var(--accent);
+  transform: scale(1.05);
 }
 
 .services-grid {

@@ -149,7 +149,7 @@ defineExpose({ openSettings })
 
 <template>
   <div class="service-widget">
-    <div class="service" @click="openService">
+    <div class="service" :class="{ 'edit-mode': editMode }" @click="openService">
       <div class="service-icon-wrapper">
         <div class="service-icon">
           <Icon v-if="isIconifyIcon" :icon="settings.icon" width="28" height="28" />
@@ -228,9 +228,11 @@ defineExpose({ openSettings })
 .service-widget {
   height: 100%;
   width: 100%;
+  position: relative;
 }
 
 .service {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -242,11 +244,16 @@ defineExpose({ openSettings })
   transition: all 0.2s;
 }
 
-.service:hover {
+.service.edit-mode {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.service:not(.edit-mode):hover {
   transform: scale(1.05);
 }
 
-.service:hover .service-icon {
+.service:not(.edit-mode):hover .service-icon {
   background-color: var(--accent);
 }
 

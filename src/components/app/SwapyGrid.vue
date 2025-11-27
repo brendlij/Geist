@@ -14,6 +14,7 @@ type WidgetConfig = {
   component?: Component
   fallback?: string
   configurable?: boolean
+  removable?: boolean
 }
 
 type LayoutItem = {
@@ -34,6 +35,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:layout', value: LayoutItem[]): void
+  (e: 'delete-widget', slotId: string): void
 }>()
 
 const container = ref<HTMLElement | null>(null)
@@ -121,9 +123,11 @@ watch(
           v-if="getSlotContent(slot.id).widget?.component"
           :title="getSlotContent(slot.id).widget!.title"
           :configurable="getSlotContent(slot.id).widget!.configurable"
+          :removable="getSlotContent(slot.id).widget!.removable"
           :widget-id="getSlotContent(slot.id).itemId ?? undefined"
           :slot-id="slot.id"
           @open-settings="() => openWidgetSettings(slot.id)"
+          @delete="(slotId: string) => emit('delete-widget', slotId)"
         >
           <component
             :is="getSlotContent(slot.id).widget!.component"

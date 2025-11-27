@@ -129,8 +129,6 @@ button {
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
   background-color: var(--surface);
   color: var(--text);
   cursor: pointer;
