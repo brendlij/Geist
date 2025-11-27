@@ -1,3 +1,8 @@
+## 🔧 Active Development  
+**This project is currently under heavy development.**  
+Bugs, missing features and some chaos are expected right now 😄  
+If you’ve got ideas, tips or recommendations — **I’d love to hear them!**
+
 # Geist
 
 <img src="public/icon.png" alt="Geist Icon" width="80" height="80">
