@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { inject, type Ref } from 'vue'
+import { Icon } from '@iconify/vue'
 
 defineOptions({
   name: 'WidgetWrapper',
@@ -45,7 +46,7 @@ function openSettings() {
       @click.stop="openSettings"
       title="Widget Settings"
     >
-      ⚙️
+      <Icon icon="mdi:cog" width="28" height="28" />
     </button>
 
     <!-- Widget Content -->
@@ -66,8 +67,8 @@ function openSettings() {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 2em;
-  padding: 2em;
+  border-radius: var(--widget-border-radius, 2em);
+  padding: var(--widget-padding, 2em);
   overflow: hidden;
 }
 
@@ -100,13 +101,13 @@ function openSettings() {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 3rem;
+  height: 3rem;
   border: none;
   border-radius: 0.75rem;
   background-color: var(--accent);
+  color: var(--text);
   cursor: pointer;
-  font-size: 1.25rem;
   display: flex;
   align-items: center;
   justify-content: center;

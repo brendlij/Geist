@@ -72,7 +72,7 @@ onMounted(() => {
   if (!container.value) return
 
   swapy.value = createSwapy(container.value, {
-    swapMode: 'drop',
+    swapMode: 'hover',
     animation: 'dynamic',
     enabled: !!editMode?.value,
   })
@@ -139,16 +139,16 @@ watch(
 <style scoped>
 .swapy-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.5rem;
-  padding: 1.5rem;
-  grid-auto-rows: 320px;
+  grid-template-columns: repeat(var(--grid-columns, 3), minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  grid-auto-rows: var(--grid-row-height, 320px);
 }
 
 .slot {
   height: 100%;
   border: 2px dashed transparent;
-  border-radius: 2em;
+  border-radius: var(--slot-border-radius, 2em);
   transition: border-color 0.2s;
 }
 
