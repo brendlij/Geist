@@ -51,7 +51,7 @@ const editMode = inject<Ref<boolean>>('editMode')
   top: 0;
   bottom: 0;
   width: 32px;
-  z-index: 10;
+  z-index: 2;
   cursor: grab;
   background-color: transparent;
   transition: background-color var(--transition-base);
@@ -71,7 +71,7 @@ const editMode = inject<Ref<boolean>>('editMode')
 /* Content sits normally */
 .widget-content {
   position: relative;
-  z-index: 5;
+  z-index: 2;
   width: 100%;
   height: 100%;
   pointer-events: auto;
