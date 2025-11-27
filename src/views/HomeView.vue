@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, provide, ref } from 'vue'
 import { createSwapy, type Swapy } from 'swapy'
 import QuickNotesWidget from '@/components/widgets/QuickNotesWidget.vue'
 import Todolist from '@/components/widgets/Todolist.vue'
 import Clock from '@/components/widgets/Clock.vue'
 import WidgetWrapper from '@/components/app/WidgetWrapper.vue'
 import { useLayoutStore } from '@/stores/layout'
+
+// Edit mode state
+const editMode = ref(false)
+provide('editMode', editMode)
+
+function toggleEditMode() {
+  editMode.value = !editMode.value
+  if (swapy.value) {
+    swapy.value.enable(editMode.value)
+  }
+}
 
 type WidgetId = 'quick-notes' | 'todo' | 'clock'
 type WidgetConfig = {
@@ -61,8 +72,9 @@ const container = ref<HTMLElement | null>()
 onMounted(() => {
   if (container.value) {
     swapy.value = createSwapy(container.value, {
-      swapMode: 'hover',
+      swapMode: 'drop',
       animation: 'dynamic',
+      enabled: editMode.value,
     })
 
     swapy.value.onSwap((event) => {
@@ -77,7 +89,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="container" ref="container">
+  <div class="container" :class="{ 'edit-mode': editMode }" ref="container">
     <div class="slot" data-swapy-slot="a">
       <div
         v-if="slotA.itemId"
@@ -151,6 +163,10 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <button class="edit-mode-toggle" :class="{ active: editMode }" @click="toggleEditMode">
+    {{ editMode ? 'Done' : 'Edit Layout' }}
+  </button>
 </template>
 
 <style scoped>
@@ -163,23 +179,42 @@ onUnmounted(() => {
 
 .slot {
   min-height: 300px;
-  border: 2px dashed var(--border);
+  border: 2px dashed transparent;
   border-radius: 2em;
   transition: border-color 0.2s;
 }
 
-.slot:empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.slot:has(.item) {
-  border-color: transparent;
+/* Only show dashed border for empty slots in edit mode */
+.container.edit-mode .slot:not(:has(.item)) {
+  border-color: var(--border);
 }
 
 .item {
   height: 100%;
+}
+
+.edit-mode-toggle {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  padding: 0.75rem 1.5rem;
+  background-color: var(--accent);
+  color: var(--text);
+  border: none;
+  border-radius: 1rem;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  z-index: 100;
+}
+
+.edit-mode-toggle:hover {
+  background-color: var(--accent-soft);
+}
+
+.edit-mode-toggle.active {
+  background-color: var(--primary);
 }
 
 .card {

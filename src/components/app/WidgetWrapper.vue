@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { inject, type Ref } from 'vue'
+
 defineOptions({
   name: 'WidgetWrapper',
 })
@@ -8,12 +10,15 @@ interface Props {
 }
 
 defineProps<Props>()
+
+const editMode = inject<Ref<boolean>>('editMode')
 </script>
 
 <template>
-  <div class="widget-wrapper">
-    <!-- Drag Handle - invisible but provides grab cursor and drag feedback -->
+  <div class="widget-wrapper" :class="{ 'edit-mode': editMode }">
+    <!-- Drag Handle - only visible in edit mode -->
     <div
+      v-if="editMode"
       class="widget-handle"
       data-swapy-handle
       :title="`Drag to move${title ? ': ' + title : ''}`"
