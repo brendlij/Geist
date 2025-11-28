@@ -63,6 +63,7 @@ const orderedSections = computed(
     sectionsLayoutStore.layout
       .map((entry) => {
         if (!entry.item) return null
+        if (entry.disabled) return null
         const config = sectionWidgetRegistry[entry.item as SectionId]
         if (!config) return null
         return {
@@ -78,28 +79,59 @@ const orderedSections = computed(
     }>,
 )
 
+const hiddenSections = computed(() =>
+  sectionsLayoutStore.layout
+    .filter((entry) => entry.item && entry.disabled)
+    .map((entry) => ({ slot: entry.slot, sectionId: entry.item! })),
+)
+
+function findSectionIndex(sectionId: SectionId) {
+  return sectionsLayoutStore.layout.findIndex((entry) => entry.item === sectionId)
+}
+
+function findNeighborIndex(startIndex: number, direction: 'up' | 'down') {
+  if (direction === 'up') {
+    for (let i = startIndex - 1; i >= 0; i--) {
+      if (sectionsLayoutStore.layout[i]?.item) return i
+    }
+  } else {
+    for (let i = startIndex + 1; i < sectionsLayoutStore.layout.length; i++) {
+      if (sectionsLayoutStore.layout[i]?.item) return i
+    }
+  }
+  return -1
+}
+
 function canMoveSection(sectionId: SectionId, direction: 'up' | 'down') {
-  const currentIndex = sectionsLayoutStore.layout.findIndex((entry) => entry.item === sectionId)
+  const currentIndex = findSectionIndex(sectionId)
   if (currentIndex === -1) return false
-  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-  return targetIndex >= 0 && targetIndex < sectionsLayoutStore.layout.length
+  const neighborIndex = findNeighborIndex(currentIndex, direction)
+  return neighborIndex !== -1
 }
 
 function moveSection(sectionId: SectionId, direction: 'up' | 'down') {
-  const currentIndex = sectionsLayoutStore.layout.findIndex((entry) => entry.item === sectionId)
+  const currentIndex = findSectionIndex(sectionId)
   if (currentIndex === -1) return
-  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-  if (targetIndex < 0 || targetIndex >= sectionsLayoutStore.layout.length) return
+  const neighborIndex = findNeighborIndex(currentIndex, direction)
+  if (neighborIndex === -1) return
 
   const newLayout = sectionsLayoutStore.layout.map((entry) => ({ ...entry })) as SectionLayoutItem[]
-  const targetEntry = newLayout[targetIndex]
-  const currentEntry = newLayout[currentIndex]
-  if (!targetEntry || !currentEntry) return
+  const [movedEntry] = newLayout.splice(currentIndex, 1)
+  if (!movedEntry) return
 
-  const temp = targetEntry.item
-  targetEntry.item = currentEntry.item
-  currentEntry.item = temp
+  if (direction === 'down') {
+    const adjustedNeighbor = neighborIndex > currentIndex ? neighborIndex - 1 : neighborIndex
+    newLayout.splice(Math.min(adjustedNeighbor + 1, newLayout.length), 0, movedEntry)
+  } else {
+    newLayout.splice(Math.max(Math.min(neighborIndex, newLayout.length), 0), 0, movedEntry)
+  }
   sectionsLayoutStore.setLayout(newLayout)
+}
+
+function toggleSectionDisabled(slot: string) {
+  const entry = sectionsLayoutStore.layout.find((e) => e.slot === slot)
+  if (!entry) return
+  sectionsLayoutStore.setDisabled(slot, !Boolean(entry.disabled))
 }
 
 function updateSectionTitle(sectionId: SectionId, value: string) {
@@ -111,10 +143,18 @@ function handleTitleInput(sectionId: SectionId, event: Event) {
   if (!target) return
   updateSectionTitle(sectionId, target.value)
 }
+
+function getSectionTitle(sectionId: string | SectionId) {
+  // safe lookup for registry titles when indexing with dynamic strings
+  const key = sectionId as string
+  const registry = sectionWidgetRegistry as Record<string, { title: string }>
+  const entry = registry[key]
+  return entry?.title ?? key
+}
 </script>
 
 <template>
-  <div class="sections-stack">
+  <TransitionGroup name="section-stack" tag="div" class="sections-stack">
     <div
       v-for="section in orderedSections"
       :key="section.slot"
@@ -156,11 +196,37 @@ function handleTitleInput(sectionId: SectionId, event: Event) {
           >
             <Icon icon="mdi:chevron-down" width="18" height="18" />
           </button>
+          <button
+            class="control-button"
+            title="Hide section"
+            @click="toggleSectionDisabled(section.slot)"
+          >
+            <Icon icon="mdi:eye-off" width="16" height="16" />
+          </button>
         </div>
       </div>
       <component :is="section.config.component" class="section-content" />
     </div>
-  </div>
+  </TransitionGroup>
+
+  <Transition name="hidden-panel" appear>
+    <div v-if="editMode && hiddenSections.length" class="hidden-sections">
+      <h3 class="hidden-title">Hidden Sections</h3>
+      <TransitionGroup name="hidden-stack" tag="div" class="hidden-list">
+        <div v-for="hs in hiddenSections" :key="hs.slot" class="hidden-item">
+          <span class="hidden-name">{{ getSectionTitle(hs.sectionId) }}</span>
+          <button
+            class="control-button"
+            title="Restore section"
+            aria-label="Restore section"
+            @click="toggleSectionDisabled(hs.slot)"
+          >
+            <Icon icon="mdi:eye" width="16" height="16" />
+          </button>
+        </div>
+      </TransitionGroup>
+    </div>
+  </Transition>
 
   <button class="edit-mode-toggle" :class="{ active: editMode }" @click="toggleEditMode">
     <Icon v-if="editMode" icon="hugeicons:edit-off" />
@@ -176,11 +242,88 @@ function handleTitleInput(sectionId: SectionId, event: Event) {
   padding: 1rem;
 }
 
+.section-stack-enter-active,
+.section-stack-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.section-stack-enter-from,
+.section-stack-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.section-stack-move,
+.hidden-stack-move {
+  transition: transform 0.25s ease;
+}
+
+.hidden-panel-enter-active,
+.hidden-panel-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.hidden-panel-enter-from,
+.hidden-panel-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.hidden-stack-enter-active,
+.hidden-stack-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.hidden-stack-enter-from,
+.hidden-stack-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.hidden-sections {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--muted);
+  border-radius: 6px;
+}
+.hidden-title {
+  margin: 0 0 1.5rem 0;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+.hidden-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.hidden-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: var(--surface);
+  padding: 1rem;
+  border-radius: 2em;
+  transition:
+    transform 0.25s ease,
+    background-color 0.2s ease;
+}
+.hidden-name {
+  flex: 1 1 auto;
+}
+
 .section-card {
   position: relative;
   border-radius: 1.5rem;
   border: 1px solid transparent;
-  transition: border-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .section-card.edit-mode {
@@ -255,6 +398,14 @@ function handleTitleInput(sectionId: SectionId, event: Event) {
   justify-content: center;
   cursor: pointer;
   transition: background 0.2s ease;
+}
+
+.control-button :deep(svg) {
+  width: 18px;
+  height: 18px;
+  display: block;
+  color: currentColor;
+  flex-shrink: 0;
 }
 
 .control-button:disabled {

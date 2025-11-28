@@ -213,6 +213,12 @@ input::placeholder {
   box-shadow: var(--shadow-md);
 }
 
+.control-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
 /* Badge */
 .badge {
   display: inline-block;

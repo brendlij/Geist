@@ -4,6 +4,7 @@ import { ref, watch } from 'vue'
 export type SectionLayoutItem = {
   slot: string
   item: string | null
+  disabled?: boolean
 }
 
 const SECTION_SLOTS = ['section-1', 'section-2', 'section-3'] as const
@@ -14,9 +15,9 @@ const STORAGE_VERSION_KEY = 'geist:sections-layout-version'
 const CURRENT_VERSION = 1
 
 const defaultLayout: SectionLayoutItem[] = [
-  { slot: 'section-1', item: 'main-widgets' },
-  { slot: 'section-2', item: 'services-grid' },
-  { slot: 'section-3', item: null },
+  { slot: 'section-1', item: 'main-widgets', disabled: false },
+  { slot: 'section-2', item: 'services-grid', disabled: false },
+  { slot: 'section-3', item: null, disabled: false },
 ]
 
 function loadLayout(): SectionLayoutItem[] {
@@ -41,25 +42,34 @@ function loadLayout(): SectionLayoutItem[] {
       if (!entry || typeof entry.slot !== 'string') return
       if (!SECTION_SLOTS.includes(entry.slot)) return
 
-      if (entry.item === null) {
+      const item = entry.item === null ? null : typeof entry.item === 'string' ? entry.item : null
+
+      if (item === null) {
         parsedMap.set(entry.slot, null)
         return
       }
 
       if (
-        typeof entry.item === 'string' &&
-        VALID_SECTION_IDS.includes(entry.item as (typeof VALID_SECTION_IDS)[number]) &&
-        !usedSections.has(entry.item)
+        typeof item === 'string' &&
+        VALID_SECTION_IDS.includes(item as (typeof VALID_SECTION_IDS)[number]) &&
+        !usedSections.has(item)
       ) {
-        parsedMap.set(entry.slot, entry.item)
-        usedSections.add(entry.item)
+        parsedMap.set(entry.slot, item)
+        usedSections.add(item)
       }
     })
 
-    return SECTION_SLOTS.map((slot) => ({
-      slot,
-      item: parsedMap.has(slot) ? parsedMap.get(slot)! : null,
-    }))
+    // Rebuild with possible disabled flags from parsed; if not provided, default to false
+    return SECTION_SLOTS.map((slot) => {
+      const source = (parsed as Array<Record<string, unknown>>).find(
+        (e) => e && e.slot === slot,
+      ) as Record<string, unknown> | undefined
+      return {
+        slot,
+        item: parsedMap.has(slot) ? parsedMap.get(slot)! : null,
+        disabled: source ? Boolean(source.disabled) : false,
+      }
+    })
   } catch (error) {
     console.error('Failed to load sections layout from storage', error)
     return [...defaultLayout]
@@ -71,6 +81,16 @@ export const useSectionsLayoutStore = defineStore('sectionsLayout', () => {
 
   function setLayout(newLayout: SectionLayoutItem[]) {
     layout.value = [...newLayout]
+  }
+
+  function setDisabled(slot: string, value: boolean) {
+    const idx = layout.value.findIndex((l) => l.slot === slot)
+    if (idx === -1) return
+    const copy = [...layout.value]
+    const existing = copy[idx]
+    if (!existing) return
+    copy[idx] = { slot: existing.slot!, item: existing.item ?? null, disabled: value }
+    layout.value = copy
   }
 
   function resetLayout() {
@@ -93,5 +113,6 @@ export const useSectionsLayoutStore = defineStore('sectionsLayout', () => {
     layout,
     setLayout,
     resetLayout,
+    setDisabled,
   }
 })

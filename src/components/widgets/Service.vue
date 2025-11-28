@@ -2,6 +2,7 @@
 import { computed, ref, inject, type Ref, watch, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useWidgetSettingsStore, type ServiceSettings } from '@/stores/widgetSettings'
+import { resolveServiceIcon, DEFAULT_SERVICE_ICON } from '@/utils/serviceIcons'
 
 defineOptions({
   name: 'ServiceWidget',
@@ -16,20 +17,26 @@ const props = defineProps<Props>()
 const settingsStore = useWidgetSettingsStore()
 const editMode = inject<Ref<boolean>>('editMode')
 const showSettings = ref(false)
+const savingSettings = ref(false)
+
+type AutoIconStatus = 'idle' | 'loading' | 'success' | 'error'
+const autoIconStatus = ref<AutoIconStatus>('idle')
+const autoIconError = ref<string | null>(null)
+const iconManuallyEdited = ref(false)
 
 // Default values
 const defaults: ServiceSettings = {
   name: 'My Service',
   url: 'http://localhost',
-  icon: 'mdi:link',
+  icon: DEFAULT_SERVICE_ICON,
   description: 'Click to open',
 }
 
 // Get saved settings or use defaults
 const settings = computed(() => {
-  if (!props.slotId) return defaults
+  if (!props.slotId) return { ...defaults }
   const saved = settingsStore.getSettings(props.slotId, 'service')
-  return saved ?? defaults
+  return { ...defaults, ...(saved ?? {}) }
 })
 
 // Form state for editing
@@ -38,19 +45,29 @@ const formData = ref<ServiceSettings>({ ...defaults })
 function openSettings() {
   formData.value = { ...settings.value }
   showSettings.value = true
+  resetIconSessionState()
 }
 
-function saveSettings() {
-  if (props.slotId) {
-    settingsStore.setSettings(props.slotId, 'service', { ...formData.value })
+async function saveSettings() {
+  if (savingSettings.value) return
+  savingSettings.value = true
+  try {
+    if (props.slotId) {
+      // auto detect before saving (no Button nötig)
+      await autoDetectIcon()
+      settingsStore.setSettings(props.slotId, 'service', { ...formData.value })
+    }
+    showSettings.value = false
+    checkStatus()
+  } finally {
+    savingSettings.value = false
   }
-  showSettings.value = false
-  // Re-check status after saving new URL
-  checkStatus()
 }
 
 function closeSettings() {
   showSettings.value = false
+  autoIconStatus.value = 'idle'
+  autoIconError.value = null
 }
 
 // Check if icon is a URL (image)
@@ -59,17 +76,30 @@ const isImageIcon = computed(() => {
   return icon.startsWith('http') || icon.startsWith('/') || icon.startsWith('data:')
 })
 
-// Check if icon is an Iconify icon (contains : like mdi:home, hugeicons:link)
+// Check if icon is an Iconify icon
 const isIconifyIcon = computed(() => {
   const icon = settings.value.icon
   return icon.includes(':') && !isImageIcon.value
 })
 
-// Status indicator for ping checks
+const previewIconValue = computed(() => formData.value.icon?.trim() || DEFAULT_SERVICE_ICON)
+const previewIsImageIcon = computed(() => {
+  const icon = previewIconValue.value
+  return icon.startsWith('http') || icon.startsWith('/') || icon.startsWith('data:')
+})
+const previewIsIconifyIcon = computed(() => {
+  const icon = previewIconValue.value
+  return icon.includes(':') && !previewIsImageIcon.value
+})
+const canAutoDetect = computed(() => {
+  const url = formData.value.url?.trim()
+  const name = formData.value.name?.trim()
+  return Boolean((url && url !== defaults.url) || name)
+})
+
 const status = ref<'online' | 'offline' | 'unknown'>('unknown')
 let pingInterval: ReturnType<typeof setInterval> | null = null
 
-// Check if service is reachable
 async function checkStatus() {
   const url = settings.value.url
   if (!url || url === 'http://localhost') {
@@ -78,40 +108,29 @@ async function checkStatus() {
   }
 
   try {
-    // Use a HEAD request with no-cors mode to check reachability
-    // This won't give us response details but will tell us if the server responds
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
 
     const response = await fetch(url, {
       method: 'HEAD',
-      mode: 'no-cors', // Allows cross-origin requests without CORS headers
+      mode: 'no-cors',
       cache: 'no-store',
       signal: controller.signal,
     })
 
     clearTimeout(timeoutId)
-
-    // With no-cors mode, we get an opaque response (type: 'opaque')
-    // If we get here without error, the server is reachable
-    void response // Suppress unused variable warning
+    void response
     status.value = 'online'
   } catch {
-    // Network error, timeout, or server unreachable
     status.value = 'offline'
   }
 }
 
-// Start periodic status checks
 function startStatusChecks() {
-  // Initial check
   checkStatus()
-
-  // Check every 2 minutes
   pingInterval = setInterval(checkStatus, 120000)
 }
 
-// Stop status checks
 function stopStatusChecks() {
   if (pingInterval) {
     clearInterval(pingInterval)
@@ -119,12 +138,47 @@ function stopStatusChecks() {
   }
 }
 
-// Watch for URL changes
 watch(
   () => settings.value.url,
   () => {
     status.value = 'unknown'
     checkStatus()
+  },
+)
+
+watch(
+  () => formData.value.url,
+  (newUrl, oldUrl) => {
+    if (newUrl === oldUrl) return
+    autoIconStatus.value = 'idle'
+    autoIconError.value = null
+  },
+)
+
+watch(
+  () => formData.value.name,
+  (newName, oldName) => {
+    if (newName === oldName) return
+    autoIconStatus.value = 'idle'
+    autoIconError.value = null
+  },
+)
+
+// NEW: Debounced Auto-Detection bei Änderungen an Name/URL
+let autoIconDebounce: number | null = null
+
+watch(
+  () => [formData.value.url, formData.value.name],
+  () => {
+    if (!canAutoDetect.value || iconManuallyEdited.value) return
+
+    if (autoIconDebounce !== null) {
+      window.clearTimeout(autoIconDebounce)
+    }
+
+    autoIconDebounce = window.setTimeout(() => {
+      void autoDetectIcon()
+    }, 600)
   },
 )
 
@@ -137,10 +191,67 @@ onUnmounted(() => {
 })
 
 function openService() {
-  if (editMode?.value) return // Don't open in edit mode
-  // Re-check status when clicking on the service
+  if (editMode?.value) return
   checkStatus()
   window.open(settings.value.url, '_blank', 'noopener,noreferrer')
+}
+
+function markIconManuallyEdited() {
+  iconManuallyEdited.value = true
+  autoIconStatus.value = 'idle'
+  autoIconError.value = null
+}
+
+function resetIconSessionState() {
+  iconManuallyEdited.value = !isLikelyAutoIconSource(formData.value.icon)
+  autoIconStatus.value = 'idle'
+  autoIconError.value = null
+}
+
+function isLikelyAutoIconSource(icon?: string) {
+  if (!icon) return false
+  if (icon === DEFAULT_SERVICE_ICON) return true
+  return icon.includes('cdn.jsdelivr.net/gh/selfhst/icons') || icon.endsWith('/favicon.ico')
+}
+
+async function autoDetectIcon() {
+  const url = formData.value.url?.trim()
+  const name = formData.value.name?.trim()
+
+  if ((!url || url === defaults.url) && !name) {
+    return
+  }
+  if (iconManuallyEdited.value) {
+    return
+  }
+
+  autoIconStatus.value = 'loading'
+  autoIconError.value = null
+
+  try {
+    const previousIcon = formData.value.icon
+    const resolvedIcon = await resolveServiceIcon(url, name)
+    formData.value.icon = resolvedIcon
+    iconManuallyEdited.value = false
+
+    if (resolvedIcon === DEFAULT_SERVICE_ICON) {
+      autoIconStatus.value = 'error'
+      autoIconError.value = '[autoDetectIcon] No icon found. Using fallback.'
+    } else if (resolvedIcon !== previousIcon) {
+      autoIconStatus.value = 'success'
+      autoIconError.value = null
+    } else {
+      autoIconStatus.value = 'idle'
+      autoIconError.value = null
+    }
+  } catch (err) {
+    console.error('[autoDetectIcon] Failed to resolve icon:', err)
+    formData.value.icon = DEFAULT_SERVICE_ICON
+    iconManuallyEdited.value = false
+    autoIconStatus.value = 'error'
+    autoIconError.value =
+      err instanceof Error ? `[autoDetectIcon] ${err.message}` : '[autoDetectIcon] Unknown error'
+  }
 }
 
 // Expose openSettings so parent can call it
@@ -196,13 +307,37 @@ defineExpose({ openSettings })
             </div>
             <div class="form-group">
               <label for="service-icon">Icon</label>
-              <input
-                id="service-icon"
-                v-model="formData.icon"
-                type="text"
-                placeholder="mdi:home, hugeicons:link, 🔗, or URL"
-              />
-              <small class="form-hint">Iconify (mdi:icon), emoji, or image URL</small>
+              <div class="icon-preview" aria-live="polite" aria-atomic="true">
+                <span class="icon-preview-label">Preview</span>
+                <div class="icon-preview-box">
+                  <Icon
+                    v-if="previewIsIconifyIcon"
+                    :icon="previewIconValue"
+                    width="28"
+                    height="28"
+                  />
+                  <img
+                    v-else-if="previewIsImageIcon"
+                    :src="previewIconValue"
+                    :alt="formData.name"
+                    class="icon-image"
+                  />
+                  <span v-else class="emoji-icon">{{ previewIconValue }}</span>
+                </div>
+              </div>
+              <div class="icon-input-row">
+                <input
+                  id="service-icon"
+                  v-model="formData.icon"
+                  type="text"
+                  placeholder="mdi:home, hugeicons:link, 🔗, or URL"
+                  @input="markIconManuallyEdited"
+                />
+              </div>
+
+              <small v-if="autoIconError" class="form-hint error">
+                {{ autoIconError }}
+              </small>
             </div>
             <div class="form-group">
               <label for="service-description">Description</label>
@@ -216,7 +351,9 @@ defineExpose({ openSettings })
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" @click="closeSettings">Cancel</button>
-            <button class="btn btn-primary" @click="saveSettings">Save</button>
+            <button class="btn btn-primary" :disabled="savingSettings" @click="saveSettings">
+              {{ savingSettings ? 'Saving...' : 'Save' }}
+            </button>
           </div>
         </div>
       </div>
@@ -411,6 +548,40 @@ defineExpose({ openSettings })
   font-size: 1rem;
 }
 
+.icon-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.icon-preview-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.icon-preview-box {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  background-color: var(--accent-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+}
+
+.icon-input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.icon-input-row input {
+  flex: 1 1 auto;
+}
+
 .form-group input:focus {
   outline: none;
   border-color: var(--primary);
@@ -425,6 +596,14 @@ defineExpose({ openSettings })
   margin-top: 0.25rem;
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.form-hint.success {
+  color: var(--accent);
+}
+
+.form-hint.error {
+  color: #f87171;
 }
 
 .modal-footer {
