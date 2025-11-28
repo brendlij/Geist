@@ -15,6 +15,9 @@ type WidgetConfig = {
   fallback?: string
   configurable?: boolean
   removable?: boolean
+  interactiveInEditMode?: boolean
+  useSectionHandle?: boolean
+  borderless?: boolean
 }
 
 type LayoutItem = {
@@ -125,6 +128,9 @@ watch(
           :title="getSlotContent(slot.id).widget!.title"
           :configurable="getSlotContent(slot.id).widget!.configurable"
           :removable="getSlotContent(slot.id).widget!.removable"
+          :interactive-in-edit-mode="getSlotContent(slot.id).widget?.interactiveInEditMode ?? false"
+          :use-section-handle="getSlotContent(slot.id).widget?.useSectionHandle ?? false"
+          :borderless="getSlotContent(slot.id).widget?.borderless ?? false"
           :widget-id="getSlotContent(slot.id).itemId ?? undefined"
           :slot-id="slot.id"
           :compact="compact"

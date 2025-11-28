@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import type { Component } from 'vue'
-import { inject, ref, computed, type Ref } from 'vue'
+import { computed, inject, ref, type Ref } from 'vue'
 import { Icon } from '@iconify/vue'
-import SwapyGrid from '@/components/app/SwapyGrid.vue'
-import QuickNotesWidget from '@/components/widgets/QuickNotesWidget.vue'
-import Todolist from '@/components/widgets/Todolist.vue'
-import ServiceWidget from '@/components/widgets/Service.vue'
-import { useLayoutStore } from '@/stores/layout'
-import { useServicesLayoutStore } from '@/stores/servicesLayout'
+import MainWidgetsSection from '@/components/sections/MainWidgetsSection.vue'
+import ServicesSection from '@/components/sections/ServicesSection.vue'
+import { useSectionsLayoutStore, type SectionLayoutItem } from '@/stores/sectionsLayout'
+import { useSectionTitlesStore } from '@/stores/sectionTitles'
 
 const editMode = inject<Ref<boolean>>('editMode', ref(false))
 
@@ -15,108 +12,154 @@ function toggleEditMode() {
   editMode.value = !editMode.value
 }
 
-type WidgetId = 'quick-notes' | 'todo' | 'service'
-type WidgetConfig = {
-  id: WidgetId
-  title: string
-  component?: Component
-  fallback?: string
-  configurable?: boolean
+const sectionsLayoutStore = useSectionsLayoutStore()
+const sectionTitlesStore = useSectionTitlesStore()
+
+const sectionWidgetRegistry = {
+  'main-widgets': {
+    id: 'main-widgets',
+    title: 'Main Widgets',
+    component: MainWidgetsSection,
+  },
+  'services-grid': {
+    id: 'services-grid',
+    title: 'Services',
+    component: ServicesSection,
+  },
 }
 
-const widgetRegistry: Record<WidgetId, WidgetConfig> = {
-  'quick-notes': { id: 'quick-notes', title: 'Quick Notes', component: QuickNotesWidget },
-  todo: { id: 'todo', title: 'To-Do List', component: Todolist },
-  service: { id: 'service', title: 'Service', component: ServiceWidget, configurable: true },
-}
+type SectionId = keyof typeof sectionWidgetRegistry
 
-const layoutStore = useLayoutStore()
-const servicesLayoutStore = useServicesLayoutStore()
+const requiredSections: SectionId[] = ['main-widgets', 'services-grid']
 
-// Main widgets grid - 6 slots
-const slots = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'e' }, { id: 'f' }]
+function ensureRequiredSectionsPresent() {
+  const layoutCopy = sectionsLayoutStore.layout.map((entry) => ({
+    ...entry,
+  })) as SectionLayoutItem[]
+  let changed = false
 
-// Dynamic services widget registry - generates entries based on layout
-type ServiceWidgetConfig = {
-  id: string
-  title: string
-  component: Component
-  configurable: boolean
-  removable: boolean
-}
+  requiredSections.forEach((sectionId) => {
+    const alreadyPresent = layoutCopy.some((entry) => entry.item === sectionId)
+    if (alreadyPresent) return
 
-// Create a registry entry for any service ID
-function getServiceWidgetConfig(serviceId: string): ServiceWidgetConfig {
-  return {
-    id: serviceId,
-    title: serviceId.replace('service-', 'Service '),
-    component: ServiceWidget,
-    configurable: true,
-    removable: true,
-  }
-}
-
-// Build dynamic registry from current layout
-const servicesWidgetRegistry = computed(() => {
-  const registry: Record<string, ServiceWidgetConfig> = {}
-  servicesLayoutStore.layout.forEach((item) => {
-    if (item.item) {
-      registry[item.item] = getServiceWidgetConfig(item.item)
+    const emptyEntry = layoutCopy.find((entry) => entry.item === null)
+    if (emptyEntry) {
+      emptyEntry.item = sectionId
+      changed = true
+      return
     }
+
+    layoutCopy.push({ slot: `section-${layoutCopy.length + 1}`, item: sectionId })
+    changed = true
   })
-  // Also add some extra IDs for newly added services
-  for (let i = 1; i <= 24; i++) {
-    const id = `service-${i}`
-    if (!registry[id]) {
-      registry[id] = getServiceWidgetConfig(id)
-    }
+  if (changed) {
+    sectionsLayoutStore.setLayout(layoutCopy)
   }
-  return registry
-})
-
-// Handle service deletion
-function handleDeleteService(slotId: string) {
-  servicesLayoutStore.removeService(slotId)
-  servicesGridKey.value++
 }
 
-// Handle adding a new service
-function handleAddService() {
-  servicesLayoutStore.addService()
-  servicesGridKey.value++
+ensureRequiredSectionsPresent()
+const orderedSections = computed(
+  () =>
+    sectionsLayoutStore.layout
+      .map((entry) => {
+        if (!entry.item) return null
+        const config = sectionWidgetRegistry[entry.item as SectionId]
+        if (!config) return null
+        return {
+          slot: entry.slot,
+          sectionId: entry.item as SectionId,
+          config,
+        }
+      })
+      .filter(Boolean) as Array<{
+      slot: string
+      sectionId: SectionId
+      config: (typeof sectionWidgetRegistry)[SectionId]
+    }>,
+)
+
+function canMoveSection(sectionId: SectionId, direction: 'up' | 'down') {
+  const currentIndex = sectionsLayoutStore.layout.findIndex((entry) => entry.item === sectionId)
+  if (currentIndex === -1) return false
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  return targetIndex >= 0 && targetIndex < sectionsLayoutStore.layout.length
 }
 
-// Key to force re-render of services grid when adding/removing
-const servicesGridKey = ref(0)
+function moveSection(sectionId: SectionId, direction: 'up' | 'down') {
+  const currentIndex = sectionsLayoutStore.layout.findIndex((entry) => entry.item === sectionId)
+  if (currentIndex === -1) return
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  if (targetIndex < 0 || targetIndex >= sectionsLayoutStore.layout.length) return
+
+  const newLayout = sectionsLayoutStore.layout.map((entry) => ({ ...entry })) as SectionLayoutItem[]
+  const targetEntry = newLayout[targetIndex]
+  const currentEntry = newLayout[currentIndex]
+  if (!targetEntry || !currentEntry) return
+
+  const temp = targetEntry.item
+  targetEntry.item = currentEntry.item
+  currentEntry.item = temp
+  sectionsLayoutStore.setLayout(newLayout)
+}
+
+function updateSectionTitle(sectionId: SectionId, value: string) {
+  sectionTitlesStore.setTitle(sectionId, value)
+}
+
+function handleTitleInput(sectionId: SectionId, event: Event) {
+  const target = event.target as HTMLInputElement | null
+  if (!target) return
+  updateSectionTitle(sectionId, target.value)
+}
 </script>
 
 <template>
-  <!-- Main Widgets Grid -->
-  <SwapyGrid
-    :slots="slots"
-    :widget-registry="widgetRegistry"
-    :layout="layoutStore.layout"
-    @update:layout="layoutStore.setLayout"
-  />
-
-  <!-- Services Grid -->
-  <div class="services-section">
-    <div class="services-header">
-      <h2 class="section-title">Services</h2>
-      <button v-if="editMode" class="add-service-button" @click="handleAddService">
-        <Icon icon="mdi:plus" width="20" height="20" />
-        Add Service
-      </button>
+  <div class="sections-stack">
+    <div
+      v-for="section in orderedSections"
+      :key="section.slot"
+      class="section-card"
+      :class="{ 'edit-mode': editMode }"
+    >
+      <div class="section-header" :class="{ 'edit-mode': editMode }">
+        <div class="section-heading">
+          <template v-if="editMode">
+            <input
+              class="section-title-input"
+              type="text"
+              :value="sectionTitlesStore.titles[section.sectionId]"
+              :placeholder="section.config.title"
+              @input="handleTitleInput(section.sectionId, $event)"
+            />
+          </template>
+          <template v-else>
+            <h2 class="section-display-title">
+              {{ sectionTitlesStore.titles[section.sectionId] }}
+            </h2>
+          </template>
+        </div>
+        <div v-if="editMode" class="section-controls">
+          <span class="section-type-pill">{{ section.config.title }}</span>
+          <button
+            class="control-button"
+            :disabled="!canMoveSection(section.sectionId, 'up')"
+            @click="moveSection(section.sectionId, 'up')"
+            aria-label="Move section up"
+          >
+            <Icon icon="mdi:chevron-up" width="18" height="18" />
+          </button>
+          <button
+            class="control-button"
+            :disabled="!canMoveSection(section.sectionId, 'down')"
+            @click="moveSection(section.sectionId, 'down')"
+            aria-label="Move section down"
+          >
+            <Icon icon="mdi:chevron-down" width="18" height="18" />
+          </button>
+        </div>
+      </div>
+      <component :is="section.config.component" class="section-content" />
     </div>
-    <SwapyGrid
-      :key="servicesGridKey"
-      :slots="servicesLayoutStore.slots"
-      :widget-registry="servicesWidgetRegistry"
-      :layout="servicesLayoutStore.layout"
-      class="services-grid"
-      @update:layout="servicesLayoutStore.setLayout"
-      @delete-widget="handleDeleteService"
-    />
   </div>
 
   <button class="edit-mode-toggle" :class="{ active: editMode }" @click="toggleEditMode">
@@ -126,79 +169,105 @@ const servicesGridKey = ref(0)
 </template>
 
 <style scoped>
-.services-section {
-  margin-top: 1rem;
-}
-
-.services-header {
+.sections-stack {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.section-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  padding: 0.75rem 1rem;
-  margin: 0;
-  color: var(--text);
-  opacity: 0.9;
-  background-color: var(--accent-soft);
-  border: 1px solid var(--border);
-  border-radius: 1.5rem;
-}
-
-.add-service-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background-color: var(--primary);
-  color: var(--text);
-  border: none;
-  border-radius: 1rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.add-service-button:hover {
-  background-color: var(--accent);
-  transform: scale(1.05);
-}
-
-.services-grid {
-  --grid-columns: 8;
-  --grid-row-height: 120px;
-  --slot-border-radius: 1.25rem;
-  --widget-border-radius: 1.25rem;
-  --widget-padding: 0.75rem;
-}
-
-.container {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  flex-direction: column;
   gap: 1.5rem;
-  padding: 1.5rem;
+  padding: 1rem;
 }
 
-.slot {
-  min-height: 300px;
-  border: 2px dashed transparent;
-  border-radius: 2em;
-  transition: border-color 0.2s;
+.section-card {
+  position: relative;
+  border-radius: 1.5rem;
+  border: 1px solid transparent;
+  transition: border-color 0.2s ease;
 }
 
-/* Only show dashed border for empty slots in edit mode */
-.container.edit-mode .slot:not(:has(.item)) {
+.section-card.edit-mode {
   border-color: var(--border);
+  padding-top: 0.5rem;
 }
 
-.item {
-  height: 100%;
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.75rem 0.5rem;
+  margin-left: 10px;
+}
+
+.section-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.section-display-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.section-title-input {
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  padding: 0.4rem 0.8rem;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.section-title-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.section-type-pill {
+  align-self: flex-start;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.section-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text);
+}
+
+.control-button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.control-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.control-button:not(:disabled):hover {
+  background: var(--accent);
+}
+
+.section-content {
+  display: block;
 }
 
 .edit-mode-toggle {
@@ -226,10 +295,6 @@ const servicesGridKey = ref(0)
 }
 
 .edit-mode-toggle:hover {
-  background-color: var(--accent-soft);
-}
-
-.card {
   background-color: var(--accent-soft);
 }
 </style>

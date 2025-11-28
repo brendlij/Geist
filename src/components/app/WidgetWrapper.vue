@@ -13,12 +13,18 @@ interface Props {
   configurable?: boolean
   removable?: boolean
   compact?: boolean // For header widgets - split drag/menu areas
+  interactiveInEditMode?: boolean // Allow interacting with content while edit mode is active
+  useSectionHandle?: boolean // Show dedicated section drag handle instead of dragging entire card
+  borderless?: boolean // Hide wrapper border/background (for vacuum widgets)
 }
 
 const props = withDefaults(defineProps<Props>(), {
   configurable: false,
   removable: false,
   compact: false,
+  interactiveInEditMode: false,
+  useSectionHandle: false,
+  borderless: false,
 })
 
 const emit = defineEmits<{
@@ -70,9 +76,19 @@ onUnmounted(() => {
 <template>
   <div
     class="widget-wrapper"
-    :class="{ 'edit-mode': editMode, 'compact-mode': compact }"
-    :data-swapy-handle="editMode && !compact ? '' : undefined"
+    :class="{
+      'edit-mode': editMode,
+      'compact-mode': compact,
+      'section-mode': useSectionHandle,
+      borderless: borderless,
+    }"
+    :data-swapy-handle="editMode && !compact && !useSectionHandle ? '' : undefined"
   >
+    <div v-if="useSectionHandle && editMode" class="section-handle" data-swapy-handle>
+      <Icon icon="mdi:drag" class="handle-icon" />
+      <span class="handle-label">{{ title ?? 'Section' }}</span>
+      <span class="handle-hint">Drag section</span>
+    </div>
     <!-- Compact mode: split layout for header widgets -->
     <template v-if="compact && editMode">
       <!-- Left half: drag area -->
@@ -131,7 +147,11 @@ onUnmounted(() => {
     </template>
 
     <!-- Widget Content -->
-    <div class="widget-content" :class="{ disabled: editMode }" data-swapy-no-drag>
+    <div
+      class="widget-content"
+      :class="{ disabled: editMode && !props.interactiveInEditMode }"
+      data-swapy-no-drag
+    >
       <slot />
     </div>
 
@@ -153,6 +173,12 @@ onUnmounted(() => {
   overflow: visible;
 }
 
+.widget-wrapper.borderless {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
 /* Whole card is draggable in edit mode */
 .widget-wrapper.edit-mode {
   cursor: grab;
@@ -160,6 +186,46 @@ onUnmounted(() => {
 
 .widget-wrapper.edit-mode:active {
   cursor: grabbing;
+}
+
+.widget-wrapper.section-mode.edit-mode {
+  border: 2px dashed var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.section-handle {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: grab;
+  box-shadow: var(--shadow-sm, 0 4px 12px rgba(0, 0, 0, 0.15));
+}
+
+.handle-icon {
+  opacity: 0.8;
+  font-size: 1.25rem;
+}
+
+.section-handle:active {
+  cursor: grabbing;
+}
+
+.handle-hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.7;
 }
 
 /* Menu container */

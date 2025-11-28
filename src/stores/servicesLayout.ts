@@ -6,14 +6,46 @@ type SlotItemMapArray = Array<{ slot: string; item: string | null }>
 // Maximum slots for services grid
 const MAX_SLOTS = 24
 
-// Generate slot IDs dynamically
-function generateSlots(count: number): string[] {
-  return Array.from({ length: count }, (_, i) => `s${i + 1}`)
+const DEFAULT_SERVICE_COUNT = 3
+
+function createDefaultLayout(): SlotItemMapArray {
+  return Array.from({ length: DEFAULT_SERVICE_COUNT }, (_, index) => ({
+    slot: `s${index + 1}`,
+    item: `service-${index + 1}`,
+  }))
+}
+
+function compactLayout(entries: SlotItemMapArray): SlotItemMapArray {
+  return entries.filter((entry) => entry.item !== null)
 }
 
 const STORAGE_KEY = 'geist:services-layout'
 const STORAGE_VERSION_KEY = 'geist:services-layout-version'
 const CURRENT_VERSION = 2 // Bumped version for new dynamic system
+
+function normalizeLayout(entries: unknown): SlotItemMapArray {
+  if (!Array.isArray(entries)) return createDefaultLayout()
+
+  const normalized: SlotItemMapArray = []
+  const seenSlots = new Set<string>()
+  const seenItems = new Set<string>()
+
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue
+    const slot = String((entry as { slot?: string }).slot ?? '')
+    const item = (entry as { item?: string | null }).item ?? null
+
+    if (!slot || seenSlots.has(slot)) continue
+    if (item !== null) {
+      if (typeof item !== 'string' || seenItems.has(item)) continue
+      normalized.push({ slot, item })
+      seenSlots.add(slot)
+      seenItems.add(item)
+    }
+  }
+
+  return normalized.length > 0 ? normalized : createDefaultLayout()
+}
 
 function loadLayout(): SlotItemMapArray {
   try {
@@ -21,41 +53,24 @@ function loadLayout(): SlotItemMapArray {
     if (version !== String(CURRENT_VERSION)) {
       localStorage.removeItem(STORAGE_KEY)
       localStorage.setItem(STORAGE_VERSION_KEY, String(CURRENT_VERSION))
-      // Return default with 8 services
-      return generateSlots(12).map((slot, i) => ({
-        slot,
-        item: i < 8 ? `service-${i + 1}` : null,
-      }))
+      return createDefaultLayout()
     }
 
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
-      return generateSlots(12).map((slot, i) => ({
-        slot,
-        item: i < 8 ? `service-${i + 1}` : null,
-      }))
+      return createDefaultLayout()
     }
 
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) {
-      return generateSlots(12).map((slot, i) => ({
-        slot,
-        item: i < 8 ? `service-${i + 1}` : null,
-      }))
-    }
-
-    return parsed as SlotItemMapArray
+    return normalizeLayout(parsed)
   } catch (error) {
     console.error('Failed to load services layout from storage', error)
-    return generateSlots(12).map((slot, i) => ({
-      slot,
-      item: i < 8 ? `service-${i + 1}` : null,
-    }))
+    return createDefaultLayout()
   }
 }
 
 export const useServicesLayoutStore = defineStore('servicesLayout', () => {
-  const layout = ref<SlotItemMapArray>(loadLayout())
+  const layout = ref<SlotItemMapArray>(compactLayout(loadLayout()))
 
   // Computed slots based on current layout
   const slots = computed(() => layout.value.map((l) => ({ id: l.slot })))
@@ -81,55 +96,36 @@ export const useServicesLayoutStore = defineStore('servicesLayout', () => {
   }
 
   function setLayout(newLayout: SlotItemMapArray) {
-    layout.value = [...newLayout]
+    layout.value = compactLayout([...newLayout])
   }
 
-  // Add a new service to the first empty slot, or create a new slot
+  // Add a new service (always creates a new slot)
   function addService(): string | null {
-    // First, try to find an empty slot
-    const emptySlotIndex = layout.value.findIndex((l) => l.item === null)
-    const emptySlot = layout.value[emptySlotIndex]
-
-    if (emptySlotIndex !== -1 && emptySlot) {
-      const serviceId = getNextServiceId()
-      emptySlot.item = serviceId
-      return serviceId
+    if (layout.value.length >= MAX_SLOTS) {
+      return null
     }
 
-    // If no empty slots and we haven't reached max, add a new slot
-    if (layout.value.length < MAX_SLOTS) {
-      const slotId = getNextSlotId()
-      const serviceId = getNextServiceId()
-      layout.value.push({ slot: slotId, item: serviceId })
-      return serviceId
-    }
-
-    return null // Max slots reached
+    const slotId = getNextSlotId()
+    const serviceId = getNextServiceId()
+    layout.value.push({ slot: slotId, item: serviceId })
+    return serviceId
   }
 
-  // Remove a service from a slot (just clears the slot, doesn't remove it)
+  // Remove a service by removing its slot entry entirely
   function removeService(slotId: string) {
-    const slot = layout.value.find((l) => l.slot === slotId)
-    if (slot) {
-      slot.item = null
+    const index = layout.value.findIndex((l) => l.slot === slotId)
+    if (index !== -1) {
+      layout.value.splice(index, 1)
     }
   }
 
-  // Remove empty slots from the end (cleanup)
+  // Remove any empty slots to keep grid tight
   function cleanupEmptySlots() {
-    // Remove trailing empty slots, but keep at least the slots with items
-    let lastSlot = layout.value[layout.value.length - 1]
-    while (layout.value.length > 4 && lastSlot && lastSlot.item === null) {
-      layout.value.pop()
-      lastSlot = layout.value[layout.value.length - 1]
-    }
+    layout.value = compactLayout(layout.value)
   }
 
   function resetLayout() {
-    layout.value = generateSlots(12).map((slot, i) => ({
-      slot,
-      item: i < 8 ? `service-${i + 1}` : null,
-    }))
+    layout.value = createDefaultLayout()
   }
 
   watch(
